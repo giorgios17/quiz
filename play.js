@@ -1,9 +1,9 @@
 import { createDB, isLocal } from './db.js';
-import { COUPLE } from './config.js';
+import { COUPLE, CREDIT } from './config.js';
+import { sfx, unlock, setMuted, isMuted } from './audio.js';
 
 const $ = (s) => document.querySelector(s);
 const LETTERS = ['A', 'B', 'C', 'D'];
-const SHAPES = ['▲', '◆', '●', '■'];
 const ME_KEY = 'wq_me';
 const SENT_KEY = 'wq_sent';
 
@@ -17,6 +17,7 @@ let builtFor = -1;
 let qStart = 0;              // istante (ms) in cui il telefono ha mostrato la domanda
 let qEnd = 0;
 let sent = null;             // { index, choice }
+let revealedFor = -1;        // domanda per cui ho già dato feedback (suono/vibrazione)
 
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const el = (tag, cls, text) => {
@@ -31,12 +32,29 @@ const uid = () =>
 
 function show(name) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== 'v-' + name; });
+  // il pulsante dei suoni non deve coprire il timer durante la domanda
+  const st = document.querySelector('#sound-toggle');
+  if (st) st.style.display = name === 'question' ? 'none' : '';
 }
 
 async function init() {
   $('#couple').textContent = COUPLE.names;
   $('#title').textContent = COUPLE.title;
   $('#demo-banner').hidden = !isLocal;
+  document.querySelectorAll('.credit').forEach((c) => { c.textContent = CREDIT; });
+
+  // sui telefoni i suoni sono spenti di default (decine di telefoni insieme sarebbero un caos);
+  // la vibrazione invece funziona sempre. Chi vuole può attivare i suoni dal pulsante.
+  setMuted(true);
+  const st = $('#sound-toggle');
+  st.hidden = false;
+  st.addEventListener('click', () => {
+    unlock();
+    setMuted(!isMuted());
+    st.textContent = isMuted() ? '🔇' : '🔊';
+    if (!isMuted()) sfx.tap();
+  });
+
   me = load(ME_KEY);
   sent = load(SENT_KEY);
   if (me) $('#name').value = me.name;
@@ -86,6 +104,7 @@ function render() {
   const phase = state ? state.phase : 'lobby';
 
   if (phase === 'lobby' || !state) {
+    revealedFor = -1;
     $('#wait-name').textContent = `Ciao ${me.name}!`;
     $('#wait-text').textContent = 'Sei dentro! Guarda lo schermo, il quiz sta per iniziare.';
     show('wait');
@@ -114,7 +133,8 @@ function showQuestion() {
     state.question.options.forEach((txt, i) => {
       const b = el('button', `ans c${i}`);
       b.type = 'button';
-      b.append(el('span', 'letter', LETTERS[i]), el('span', 'atext', txt), el('span', 'shape', SHAPES[i]));
+      b.style.setProperty('--i', i);
+      b.append(el('span', 'letter', LETTERS[i]), el('span', 'atext', txt));
       b.addEventListener('click', () => answer(i));
       box.append(b);
     });
@@ -134,6 +154,8 @@ async function answer(choice) {
   if (ms > state.duration * 1000 + 500) return;
   sent = { index: state.index, choice, session: state.endsAt };
   localStorage.setItem(SENT_KEY, JSON.stringify(sent));
+  if (navigator.vibrate) navigator.vibrate(30);
+  sfx.tap();
   showSent();
   await db.set(`game/answers/${state.index}/${me.id}`, { c: choice, ms });
 }
@@ -141,7 +163,7 @@ async function answer(choice) {
 function showSent() {
   const b = $('#sent-badge');
   b.className = `sent-badge c${sent.choice}`;
-  b.textContent = `${LETTERS[sent.choice]} ${SHAPES[sent.choice]}`;
+  b.textContent = LETTERS[sent.choice];
   show('sent');
 }
 
@@ -168,6 +190,18 @@ function showReveal() {
   $('#res-rank').textContent = `${rank}°`;
   $('#res-of').textContent = `su ${total}`;
   show('reveal');
+
+  // vibrazione e suono una sola volta per domanda, con animazione di entrata
+  if (revealedFor !== state.index) {
+    revealedFor = state.index;
+    const ok = last && last.q === state.index && last.correct;
+    const bad = last && last.q === state.index && !last.correct;
+    document.querySelector('#v-reveal').classList.remove('good', 'bad');
+    void document.querySelector('#v-reveal').offsetWidth;
+    document.querySelector('#v-reveal').classList.add(ok ? 'good' : bad ? 'bad' : 'neutral');
+    if (navigator.vibrate) navigator.vibrate(ok ? [60, 40, 60, 40, 120] : bad ? 250 : 0);
+    if (ok) sfx.right(); else if (bad) sfx.wrong();
+  }
 }
 
 function showFinal() {

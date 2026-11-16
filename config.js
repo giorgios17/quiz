@@ -23,3 +23,8 @@ export const COUPLE = {
 
 // Secondi a disposizione per domanda (si può cambiare per singola domanda in questions.js)
 export const DEFAULT_TIME = 20;
+
+// Secondi in cui resta visibile la risposta giusta prima di passare alla domanda successiva
+export const REVEAL_TIME = 10;
+
+export const CREDIT = "Sviluppato da Giorgio Surace";

@@ -23,6 +23,7 @@
       <input id="name" type="text" maxlength="20" placeholder="Il tuo nome" autocomplete="off" autocapitalize="words" required>
       <button class="primary big" type="submit">Partecipa</button>
     </form>
+    <p class="credit"></p>
   </section>
 
   <!-- attesa -->
@@ -30,6 +31,7 @@
     <div class="check">✓</div>
     <h1 id="wait-name"></h1>
     <p class="lead" id="wait-text">Sei dentro! Guarda lo schermo, il quiz sta per iniziare.</p>
+    <p class="credit"></p>
   </section>
 
   <!-- domanda -->
@@ -66,7 +68,10 @@
     <h1 id="fin-title"></h1>
     <p class="lead" id="fin-score"></p>
     <p class="muted" id="fin-footer"></p>
+    <p class="credit"></p>
   </section>
+
+  <button id="sound-toggle" class="sound-toggle" title="Suoni" hidden>🔇</button>
 
   <script type="module" src="play.js"></script>
 </body>

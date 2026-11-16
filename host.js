@@ -1,10 +1,10 @@
 import { createDB, isLocal } from './db.js';
-import { COUPLE, DEFAULT_TIME } from './config.js';
+import { COUPLE, DEFAULT_TIME, REVEAL_TIME, CREDIT } from './config.js';
 import { QUESTIONS } from './questions.js';
+import { sfx, unlock, isUnlocked, setMuted, isMuted } from './audio.js';
 
 const $ = (s) => document.querySelector(s);
 const LETTERS = ['A', 'B', 'C', 'D'];
-const SHAPES = ['▲', '◆', '●', '■'];
 
 let db;
 let state = null;
@@ -15,6 +15,11 @@ let lock = false;          // evita doppie rivelazioni
 let builtFor = -1;         // indice domanda per cui sono costruite le card
 let unwatchAnswers = null;
 let watchedIndex = -1;
+let paused = false;        // mette in pausa l'avanzamento automatico
+let autoLock = false;      // evita doppi avanzamenti automatici
+let revealFallback = 0;    // scadenza di riserva se lo stato di rivelazione non contiene revealEndsAt
+let lastKey = null;        // per riconoscere i cambi di fase (suoni/animazioni)
+let lastSecond = -1;
 
 // ---------- utilità ----------
 const sortedPlayers = () =>
@@ -57,16 +62,75 @@ async function init() {
     stateLoaded = true;
     if (!state) { db.set('game/state', { phase: 'lobby' }); return; }
     if (state.phase !== 'question') lock = false;
+    if (state.phase !== 'reveal') { autoLock = false; paused = false; revealFallback = 0; }
     if (state.phase === 'question' || state.phase === 'reveal') watchAnswers(state.index);
+    onPhaseChange();
     render();
   });
 
   setInterval(tick, 100);
   $('#next').addEventListener('click', advance);
-  $('#reset').addEventListener('click', reset);
+  $('#pause').addEventListener('click', togglePause);
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') { e.preventDefault(); advance(); }
+    if (e.code === 'KeyP') togglePause();
+    if (e.code === 'KeyR' && e.shiftKey) reset();   // scorciatoia nascosta: Maiusc+R azzera tutto
   });
+  requestAnimationFrame(frame);
+
+  // audio: i browser lo sbloccano solo dopo un click o un tasto
+  const hint = $('#sound-hint');
+  const unlockAudio = () => { unlock(); hint.hidden = true; };
+  document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
+  document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
+  hint.hidden = isUnlocked();
+  $('#mute').addEventListener('click', (e) => {
+    setMuted(!isMuted());
+    e.currentTarget.textContent = isMuted() ? '🔇' : '🔊';
+  });
+
+  $('.credit').textContent = CREDIT;
+  makeHearts();
+}
+
+function togglePause() {
+  if (!state || state.phase !== 'reveal') return;
+  paused = !paused;
+  render();
+}
+
+// suoni e animazioni quando cambia fase/domanda
+function onPhaseChange() {
+  const key = state.phase + ':' + (state.index ?? '');
+  if (lastKey === null) { lastKey = key; return; }   // primo caricamento: nessun suono
+  if (key === lastKey) return;
+  const wasLobby = lastKey.startsWith('lobby');
+  lastKey = key;
+  lastSecond = -1;
+  if (state.phase === 'question') {
+    if (wasLobby) sfx.start();
+    setTimeout(() => sfx.question(), wasLobby ? 450 : 0);
+  } else if (state.phase === 'reveal') {
+    sfx.drum();
+    const anyCorrect = (state.counts || [])[state.correct] > 0;
+    setTimeout(() => (anyCorrect ? sfx.correct() : sfx.nobody()), 480);
+    if (anyCorrect) setTimeout(() => confetti(45, 4), 480);
+  } else if (state.phase === 'final') {
+    sfx.final();
+  }
+}
+
+// cuoricini che salgono lentamente sullo sfondo
+function makeHearts() {
+  const box = $('#hearts');
+  for (let i = 0; i < 16; i++) {
+    const h = el('span', 'heart', i % 3 === 0 ? '✦' : '♥');
+    h.style.left = Math.random() * 100 + 'vw';
+    h.style.fontSize = 14 + Math.random() * 26 + 'px';
+    h.style.animationDuration = 14 + Math.random() * 14 + 's';
+    h.style.animationDelay = -Math.random() * 20 + 's';
+    box.append(h);
+  }
 }
 
 function watchAnswers(i) {
@@ -129,7 +193,7 @@ async function reveal() {
     upd[`game/players/${id}/score`] = (p.score || 0) + points;
     upd[`game/players/${id}/last`] = { q: i, points, correct, choice };
   }
-  upd['game/state'] = { ...state, phase: 'reveal', correct: q.correct, counts };
+  upd['game/state'] = { ...state, phase: 'reveal', correct: q.correct, counts, revealEndsAt: Date.now() + REVEAL_TIME * 1000 };
   await db.update(upd);
 }
 
@@ -139,11 +203,48 @@ async function reset() {
   await db.set('game', null);
 }
 
+// quando finisce la rivelazione (con riserva se il campo manca)
+function revealEnd() {
+  if (state.revealEndsAt) return state.revealEndsAt;
+  if (!revealFallback) revealFallback = Date.now() + REVEAL_TIME * 1000;
+  return revealFallback;
+}
+
+// barra del tempo: aggiornata a ogni frame (fluida, niente scatti)
+function frame() {
+  if (state) {
+    let frac = null;
+    if (state.phase === 'question') frac = (state.endsAt - Date.now()) / (state.duration * 1000);
+    else if (state.phase === 'reveal' && !paused) frac = (revealEnd() - Date.now()) / (REVEAL_TIME * 1000);
+    if (frac !== null) $('#timerbar').style.transform = `scaleX(${Math.max(0, Math.min(1, frac))})`;
+  }
+  requestAnimationFrame(frame);
+}
+
 function tick() {
-  if (!state || state.phase !== 'question') return;
+  if (!state) return;
+
+  if (state.phase === 'reveal') {
+    // dopo REVEAL_TIME secondi si passa da soli alla domanda successiva
+    const left = revealEnd() - Date.now();
+    const isLast = state.index + 1 >= QUESTIONS.length;
+    if (paused) {
+      $('#answered').textContent = '⏸ In pausa';
+    } else {
+      $('#answered').textContent = `${isLast ? 'Classifica finale' : 'Prossima domanda'} tra ${Math.max(0, Math.ceil(left / 1000))}s`;
+      if (left <= 0 && !autoLock) { autoLock = true; advance(); }
+    }
+    return;
+  }
+
+  if (state.phase !== 'question') return;
   const left = state.endsAt - Date.now();
-  $('#timerbar').style.width = Math.max(0, (left / (state.duration * 1000)) * 100) + '%';
-  $('#secs').textContent = Math.max(0, Math.ceil(left / 1000));
+  const sec = Math.max(0, Math.ceil(left / 1000));
+  const secsEl = $('#secs');
+  secsEl.textContent = sec;
+  secsEl.classList.toggle('urgent', sec <= 5);
+  if (sec <= 5 && sec > 0 && sec !== lastSecond) sfx.tick();
+  lastSecond = sec;
   const n = Object.keys(players).length;
   const done = Object.keys(answers).length;
   if (left <= 0 || (n > 0 && done >= n)) reveal();
@@ -153,8 +254,9 @@ function tick() {
 function render() {
   const phase = state ? state.phase : 'lobby';
   const next = $('#next');
-  const reset = $('#reset');
-  reset.hidden = false;
+  const pauseBtn = $('#pause');
+  pauseBtn.hidden = phase !== 'reveal';
+  pauseBtn.textContent = paused ? '▶ Riprendi' : '⏸ Pausa';
 
   if (phase === 'lobby') {
     setView('lobby');
@@ -164,9 +266,9 @@ function render() {
   } else if (phase === 'question' || phase === 'reveal') {
     setView('question');
     renderQuestion(phase === 'reveal');
-    next.hidden = false;
-    if (phase === 'question') next.textContent = 'Mostra la risposta';
-    else next.textContent = state.index + 1 < QUESTIONS.length ? 'Prossima domanda ▶' : 'Classifica finale 🏆';
+    // durante la domanda non serve alcun pulsante: la risposta compare da sola
+    next.hidden = phase === 'question';
+    next.textContent = state.index + 1 < QUESTIONS.length ? 'Prossima domanda ▶' : 'Classifica finale 🏆';
   } else if (phase === 'final') {
     setView('final');
     renderFinal();
@@ -181,6 +283,7 @@ function renderLobby() {
   const c = $('#count');
   c.textContent = n;
   if (n !== lastCount) {
+    if (lastCount >= 0 && n > lastCount) sfx.join();
     c.classList.remove('bump');
     void c.offsetWidth;
     c.classList.add('bump');
@@ -198,14 +301,19 @@ function buildAnswers() {
   $('#qtext').textContent = q.text;
   const box = $('#answers');
   box.replaceChildren();
+  // rilancia l'animazione di entrata della domanda
+  const qt = $('#qtext');
+  qt.classList.remove('enter');
+  void qt.offsetWidth;
+  qt.classList.add('enter');
   q.options.forEach((txt, i) => {
     const card = el('div', `ans c${i}`);
+    card.style.setProperty('--i', i);
     const fill = el('div', 'fill');
     const letter = el('span', 'letter', LETTERS[i]);
-    const shape = el('span', 'shape', SHAPES[i]);
     const text = el('span', 'atext', txt);
     const cnt = el('span', 'acount');
-    card.append(fill, letter, text, cnt, shape);
+    card.append(fill, letter, text, cnt);
     box.append(card);
   });
   builtFor = state.index;
@@ -215,7 +323,7 @@ function renderQuestion(isReveal) {
   if (builtFor !== state.index) buildAnswers();
   $('#qnum').textContent = `Domanda ${state.index + 1} / ${state.total}`;
   $('#secs').hidden = isReveal;
-  document.querySelector('.timer').style.visibility = isReveal ? 'hidden' : 'visible';
+  document.querySelector('.timer').classList.toggle('reveal', isReveal);
 
   const cards = document.querySelectorAll('.ans');
   cards.forEach((card, i) => {
@@ -243,7 +351,6 @@ function renderCounts() {
   if (state.phase === 'question') {
     $('#answered').textContent = `${done} / ${n} hanno risposto`;
   } else {
-    $('#answered').textContent = '';
     const counts = state.counts || [0, 0, 0, 0];
     const total = counts.reduce((a, b) => a + b, 0) || 1;
     document.querySelectorAll('.ans').forEach((card, i) => {
@@ -276,21 +383,23 @@ function renderFinal() {
     li.append(p.name + ' ', el('em', '', `${p.score} pt`));
     rest.append(li);
   });
-  if (!confettiDone) { confettiDone = true; confetti(); }
+  if (!confettiDone) { confettiDone = true; confetti(110, 6); }
 }
 
-function confetti() {
+function confetti(count = 80, spread = 3) {
   const box = $('#confetti');
   const colors = ['#d9485f', '#3b79c4', '#e6a817', '#3f9c70', '#b08d57'];
-  for (let i = 0; i < 80; i++) {
+  const made = [];
+  for (let i = 0; i < count; i++) {
     const s = el('span');
     s.style.left = Math.random() * 100 + 'vw';
     s.style.background = colors[i % colors.length];
-    s.style.animationDelay = Math.random() * 3 + 's';
-    s.style.animationDuration = 3 + Math.random() * 3 + 's';
+    s.style.animationDelay = Math.random() * spread * 0.5 + 's';
+    s.style.animationDuration = 2.5 + Math.random() * spread + 's';
     box.append(s);
+    made.push(s);
   }
-  setTimeout(() => box.replaceChildren(), 9000);
+  setTimeout(() => made.forEach((s) => s.remove()), (spread * 1.5 + 4) * 1000);
 }
 
 init();
