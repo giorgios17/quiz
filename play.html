@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Quiz degli sposi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="play">
+  <div id="demo-banner" class="banner" hidden>DEMO LOCALE</div>
+
+  <!-- caricamento -->
+  <section id="v-loading" class="view center"><p class="muted">Connessione…</p></section>
+
+  <!-- ingresso -->
+  <section id="v-join" class="view center" hidden>
+    <p class="eyebrow" id="couple"></p>
+    <h1 id="title"></h1>
+    <form id="join-form">
+      <input id="name" type="text" maxlength="20" placeholder="Il tuo nome" autocomplete="off" autocapitalize="words" required>
+      <button class="primary big" type="submit">Partecipa</button>
+    </form>
+  </section>
+
+  <!-- attesa -->
+  <section id="v-wait" class="view center" hidden>
+    <div class="check">✓</div>
+    <h1 id="wait-name"></h1>
+    <p class="lead" id="wait-text">Sei dentro! Guarda lo schermo, il quiz sta per iniziare.</p>
+  </section>
+
+  <!-- domanda -->
+  <section id="v-question" class="view" hidden>
+    <div class="qhead"><span id="qnum"></span><span id="secs" class="secs"></span></div>
+    <div class="timer"><div id="timerbar"></div></div>
+    <h2 id="qtext"></h2>
+    <div class="answers" id="answers"></div>
+  </section>
+
+  <!-- risposta inviata -->
+  <section id="v-sent" class="view center" hidden>
+    <div id="sent-badge" class="sent-badge"></div>
+    <h1>Risposta inviata!</h1>
+    <p class="lead">Aspetta gli altri…</p>
+  </section>
+
+  <!-- risultato -->
+  <section id="v-reveal" class="view center" hidden>
+    <div id="res-icon" class="res-icon"></div>
+    <h1 id="res-title"></h1>
+    <p id="res-points" class="lead"></p>
+    <div class="stats">
+      <div><b id="res-score">0</b><span>punti</span></div>
+      <div><b id="res-rank">1°</b><span id="res-of"></span></div>
+    </div>
+    <p class="muted">Guarda lo schermo per la prossima domanda</p>
+  </section>
+
+  <!-- finale -->
+  <section id="v-final" class="view center" hidden>
+    <p class="eyebrow">Quiz concluso</p>
+    <div id="fin-rank" class="fin-rank"></div>
+    <h1 id="fin-title"></h1>
+    <p class="lead" id="fin-score"></p>
+    <p class="muted" id="fin-footer"></p>
+  </section>
+
+  <script type="module" src="play.js"></script>
+</body>
+</html>

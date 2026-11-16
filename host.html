@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz degli sposi – Schermo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+</head>
+<body class="host">
+  <div id="demo-banner" class="banner" hidden>MODALITÀ DEMO LOCALE: funziona solo tra schede dello stesso browser (configura Firebase in config.js)</div>
+
+  <main>
+    <!-- LOBBY -->
+    <section id="s-lobby">
+      <div class="lobby-left">
+        <p class="eyebrow" id="couple"></p>
+        <h1 id="title"></h1>
+        <p class="lead">Inquadra il QR con il telefono e inserisci il tuo nome</p>
+        <div id="qr"></div>
+        <p id="joinurl" class="joinurl"></p>
+      </div>
+      <div class="lobby-right">
+        <div class="count" id="count">0</div>
+        <div class="count-label">partecipanti</div>
+        <div id="names" class="chips"></div>
+      </div>
+    </section>
+
+    <!-- DOMANDA / RIVELAZIONE -->
+    <section id="s-question" hidden>
+      <div class="qhead">
+        <span id="qnum"></span>
+        <span id="answered"></span>
+        <span id="secs" class="secs"></span>
+      </div>
+      <div class="timer"><div id="timerbar"></div></div>
+      <h2 id="qtext"></h2>
+      <div class="answers" id="answers"></div>
+      <div id="board" class="board" hidden></div>
+    </section>
+
+    <!-- FINALE -->
+    <section id="s-final" hidden>
+      <p class="eyebrow">Classifica finale</p>
+      <h1 id="final-title"></h1>
+      <div id="podium" class="podium"></div>
+      <ol id="rest" class="rest"></ol>
+    </section>
+  </main>
+
+  <footer class="controls">
+    <button id="reset" class="ghost" title="Azzera partecipanti e riparte dalla lobby">Reset</button>
+    <button id="next" class="primary">Avvia il quiz ▶</button>
+  </footer>
+  <div id="confetti"></div>
+
+  <script type="module" src="host.js"></script>
+</body>
+</html>
